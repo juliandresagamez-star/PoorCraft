@@ -1,0 +1,682 @@
+package com.nettakrim.signed_paintings.util;
+
+import com.mojang.blaze3d.platform.NativeImage;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+import com.nettakrim.signed_paintings.SignedPaintingsClient;
+import com.nettakrim.signed_paintings.gui.UIHelper;
+import com.nettakrim.signed_paintings.mixin.TextureManagerAccessor;
+import com.nettakrim.signed_paintings.rendering.OverlayInfo;
+import com.nettakrim.signed_paintings.util.media.DecodedMedia;
+import com.nettakrim.signed_paintings.util.media.MediaConfig;
+import com.nettakrim.signed_paintings.util.media.MediaDecoderRegistry;
+import com.nettakrim.signed_paintings.util.media.MediaUtils;
+import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.AbstractTexture;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
+import net.minecraft.resources.Identifier;
+
+import java.awt.*;
+import java.awt.color.ColorSpace;
+import java.awt.image.*;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+import org.jetbrains.annotations.NotNull;
+import org.lwjgl.system.MemoryUtil;
+
+import javax.imageio.ImageIO;
+import java.io.*;
+import java.nio.ByteBuffer;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
+public class ImageManager {
+    private final String dataHeader = "https://modrinth.com/mod/signed-paintings config v";
+    private final int dataVersion = 2;
+    private final File data;
+
+    private static final ExecutorService imageDecodeExecutor = Executors.newFixedThreadPool(
+            Math.max(4, Runtime.getRuntime().availableProcessors())
+    );
+
+    private static final int MAX_REDIRECTS = 3;
+
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.NEVER)
+            .connectTimeout(Duration.ofSeconds(15))
+            .build();
+    public final MediaConfig mediaConfig = new MediaConfig();
+    private final ArrayList<URLAlias> urlAliases;
+    private final Map<Identifier, Boolean> translucencyCache = new HashMap<>();
+    private final HashMap<String, ImageData> urlToImageData;
+    private final HashMap<String, OverlayInfo> itemNameToOverlay;
+    private final HashMap<String, ArrayList<ImageDataLoadInterface>> pendingImageLoads;
+    public final ArrayList<String> blockedURLs;
+    public final Set<String> trustedDomains;
+    public final Set<String> blockPromptedDomains;
+    public boolean autoBlockNew = false;
+    public int renderTime = 0;
+
+    private boolean changesMade = false;
+    public boolean hasTranslucency(Identifier id) {
+        return translucencyCache.getOrDefault(id, false);
+    }
+
+    public void cacheTranslucency(Identifier id, boolean hasTranslucency) {
+        translucencyCache.put(id, hasTranslucency);
+    }
+
+    private void checkAndCacheTranslucency(Identifier id, BufferedImage bufferedImage) {
+        if (bufferedImage == null) {
+            translucencyCache.put(id, false);
+            SignedPaintingsClient.info("Cannot check transparency for null BufferedImage: " + id, false);
+            return;
+        }
+
+        if (translucencyCache.containsKey(id)) {
+            return;
+        }
+
+        boolean hasTranslucency = false;
+        int width = bufferedImage.getWidth();
+        int height = bufferedImage.getHeight();
+
+        try {
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    int color = bufferedImage.getRGB(x, y);
+                    int alpha = (color >> 24) & 0xFF;
+
+                    if (alpha > 0 && alpha < 255) {
+                        hasTranslucency = true;
+                        break;
+                    }
+                }
+                if (hasTranslucency) {
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            SignedPaintingsClient.info("Error checking transparency for " + id + ": " + e.getMessage(), true);
+        }
+
+        translucencyCache.put(id, hasTranslucency);
+    }
+
+    public ImageManager() {
+        urlAliases = new ArrayList<>();
+        urlToImageData = new HashMap<>();
+        itemNameToOverlay = new HashMap<>();
+        pendingImageLoads = new HashMap<>();
+        blockedURLs = new ArrayList<>();
+        trustedDomains = new HashSet<>();
+        blockPromptedDomains = new HashSet<>();
+
+        data = FabricLoader.getInstance().getConfigDir().resolve("signed_paintings.txt").toFile();
+        try {
+            if (data.exists()) {
+                Scanner scanner = new Scanner(data);
+
+                int phase = 0;
+                int lines = 0;
+
+                if (scanner.hasNextLine()) {
+                    String version = scanner.nextLine();
+                    if (version.startsWith(dataHeader)) {
+                        // next line will be the first phase marker, which will move it to phase 0, for consistency with old format
+                        phase = -1;
+                    } else {
+                        // loading older format without version header, user needs to be notified about upload removal
+                        SignedPaintingsClient.sayText(Component.translatable(SignedPaintingsClient.MODID+".upload_change_notification").setStyle(SignedPaintingsClient.getUrlButton("https://github.com/Nettakrim/Signed-Paintings/blob/fixes/upload_removal.md")));
+                        makeChange();
+                    }
+                }
+
+                while (scanner.hasNextLine()) {
+                    String s = scanner.nextLine();
+                    if (s.startsWith("-")) {
+                        phase++;
+                        lines = 0;
+                        continue;
+                    } else {
+                        lines++;
+                    }
+
+                    if (phase == 0) {
+                        blockedURLs.add(s);
+                    } else if (phase == 1) {
+                        trustedDomains.add(s);
+                    } else if (phase == 2) {
+                        SignedPaintingsClient.loggingEnabled = s.equals("true");
+                    } else if (phase == 3) {
+                        boolean active = s.equals("true");
+                        switch (lines) {
+                            case 0:
+                                SignedPaintingsClient.renderSigns = active;
+                            case 1:
+                                SignedPaintingsClient.renderBanners = active;
+                            case 2:
+                                SignedPaintingsClient.renderShields = active;
+                            case 3:
+                                SignedPaintingsClient.reduceCulling = active;
+                            case 4:
+                                UIHelper.setBackgroundEnabled(active);
+                        }
+                    } else if (phase == 4) {
+                        String[] parts = s.split(" ", 3);
+                        if (parts.length == 3) {
+                            urlAliases.add(new URLAlias(parts[0], parts[2].split(" "), parts[1]));
+                        } else {
+                            SignedPaintingsClient.info("invalid url alias: \""+s+"\"", true);
+                        }
+                    }
+                }
+                scanner.close();
+            } else {
+                changesMade = true;
+            }
+        } catch (IOException e) {
+            SignedPaintingsClient.info("Failed to load data", true);
+        }
+
+        if (urlAliases.isEmpty()) {
+            registerURLAlias(new URLAlias("https://i.imgur.com/", new String[]{"i.imgur.com/", "imgur:"}, ".png"));
+            registerURLAlias(new URLAlias("https://iili.io/", new String[]{"freeimage.host/i/", "iili:"}, ".png"));
+            makeChange();
+        }
+        if (trustedDomains.isEmpty()) {
+            trustDomain("https://i.imgur.com/");
+            trustDomain("https://iili.io/");
+            trustDomain("https://i.ibb.co/");
+            trustDomain("https://upload.wikimedia.org/");
+            trustDomain("https://web.archive.org/");
+            makeChange();
+        }
+    }
+
+    public void save() {
+        if (!changesMade) return;
+        try {
+            if (!data.exists()) {
+                data.createNewFile();
+            }
+            FileWriter writer = new FileWriter(data);
+
+            StringBuilder s = new StringBuilder(dataHeader+dataVersion);
+            s.append("\n- Blocked Painting URLs -");
+            for (String url : blockedURLs) {
+                s.append("\n").append(url);
+            }
+
+            s.append("\n- Trusted URL Domains -");
+            for (String url : trustedDomains) {
+                s.append("\n").append(url);
+            }
+
+            s.append("\n- Detailed Logs -");
+            s.append("\n").append(SignedPaintingsClient.loggingEnabled ? "true" : "false");
+
+            s.append("\n- Rendering Toggles -");
+            s.append("\n").append(SignedPaintingsClient.renderSigns ? "true" : "false");
+            s.append("\n").append(SignedPaintingsClient.renderBanners ? "true" : "false");
+            s.append("\n").append(SignedPaintingsClient.renderShields ? "true" : "false");
+            s.append("\n").append(SignedPaintingsClient.reduceCulling ? "true" : "false");
+            s.append("\n").append(UIHelper.isBackgroundEnabled() ? "true" : "false");
+
+            s.append("\n- Aliases (list separated by spaces, first item is what url it will use, second item should be left as .png, then theres a list of aliases. to redirect, put your redirect host as the first item, and the put the original host (without the https://) in the alias list) -");
+            for (URLAlias alias : urlAliases) {
+                s.append("\n").append(alias.save());
+            }
+
+            writer.write(s.toString());
+            writer.close();
+            changesMade = false;
+        } catch (IOException e) {
+            SignedPaintingsClient.info("Failed to save data\n"+e.getMessage()+"\n"+Arrays.toString(e.getStackTrace()), true);
+        }
+    }
+
+    //https://github.com/Patbox/Image2Map/blob/1.20/src/main/java/space/essem/image2map/Image2Map.java
+    public void loadImage(String url, ImageDataLoadInterface onLoadCallback) {
+        if (url.equals("https://") || !isValid(url)) return;
+        ImageData imageData = urlToImageData.get(url);
+
+        boolean blocked = blockedURLs.contains(url);
+
+        if (!blocked && autoBlockNew) {
+            SignedPaintingsClient.sayRaw(
+                Component.translatable(SignedPaintingsClient.MODID+".commands.block.notify.base",
+                    Component.translatable(SignedPaintingsClient.MODID+".commands.block.notify.text", url)
+                            .setStyle(Style.EMPTY.withColor(SignedPaintingsClient.textColor).withClickEvent(new ClickEvent.SuggestCommand("/paintings:block remove "+url)))
+                    )
+                    .setStyle(Style.EMPTY.withColor(SignedPaintingsClient.nameTextColor)
+                )
+            );
+            blockedURLs.add(url);
+            blocked = true;
+        }
+
+        if (imageData != null) {
+            if (imageData.ready || blocked) {
+                onLoadCallback.onLoad(imageData);
+            } else if (pendingImageLoads.containsKey(url)) {
+                pendingImageLoads.get(url).add(onLoadCallback);
+            }
+        } else {
+            ArrayList<ImageDataLoadInterface> list = new ArrayList<>();
+            list.add(onLoadCallback);
+            registerImage(url, list, blocked);
+        }
+
+    }
+
+    private void registerImage(String url, ArrayList<ImageDataLoadInterface> onLoadCallbacks, boolean blocked) {
+        ImageData data = new ImageData();
+        urlToImageData.put(url, data);
+        if (blocked) {
+            for (ImageDataLoadInterface imageDataLoadInterface : onLoadCallbacks) {
+                imageDataLoadInterface.onLoad(data);
+            }
+            return;
+        }
+        pendingImageLoads.put(url, onLoadCallbacks);
+        SignedPaintingsClient.info("Started loading media from "+url, false);
+        downloadImageBuffer(url).orTimeout(60, TimeUnit.SECONDS).handleAsync((media, ex) -> {
+            if (media == null || ex != null) {
+                urlToImageData.remove(url);
+                pendingImageLoads.remove(url);
+                SignedPaintingsClient.info("Couldn't load media "+url+"\n"+(ex != null ? ex.toString() : "null"), true);
+            } else {
+                SignedPaintingsClient.info("Loaded media "+url+" ("+media.format+", "+media.frames.size()+" frames)", false);
+                onMediaLoad(media, url, data);
+                for (ImageDataLoadInterface imageDataLoadInterface : onLoadCallbacks) {
+                    imageDataLoadInterface.onLoad(data);
+                }
+                pendingImageLoads.remove(url);
+            }
+            return null;
+        });
+    }
+
+    private void onMediaLoad(DecodedMedia media, String url, ImageData data) {
+        Identifier identifier = Identifier.fromNamespaceAndPath(SignedPaintingsClient.MODID, createIdentifierSafeStringFromURL(url));
+        data.onMediaReady(media, identifier);
+        SignedPaintingsClient.info("Ready to render media "+url, true);
+    }
+
+    private String createIdentifierSafeStringFromURL(String url) {
+        StringBuilder builder = new StringBuilder();
+        url = url.toLowerCase(Locale.ROOT);
+        for (int i = 0; i < url.length(); i++) {
+            char character = url.charAt(i);
+            if (character == '_' || character == '-' || character >= 'a' && character <= 'z' || character >= '0' && character <= '9' || character == '/' || character == '.') {
+                builder.append(character);
+            }
+        }
+        return builder.toString();
+    }
+
+    public static void saveBufferedImageAsIdentifier(BufferedImage bufferedImage, Identifier identifier) {
+        // https://discord.com/channels/507304429255393322/807617488313516032/934395931380576287
+        if (SignedPaintingsClient.imageManager != null) {
+            SignedPaintingsClient.imageManager.checkAndCacheTranslucency(identifier, bufferedImage);
+        } else {
+            SignedPaintingsClient.info("ImageManager instance not available for transparency check: " + identifier, true);
+        }
+
+        byte[] imageBytes = ((DataBufferByte) bufferedImage.getRaster().getDataBuffer()).getData();
+
+        AtomicReference<NativeImage> nativeImage = new AtomicReference<>();
+        Minecraft.getInstance().executeBlocking(() ->
+                nativeImage.set(new NativeImage(NativeImage.Format.RGBA, bufferedImage.getWidth(), bufferedImage.getHeight(), false)));
+
+        ByteBuffer nativeImageBuffer = MemoryUtil.memByteBuffer(nativeImage.get().getPointer(),
+                nativeImage.get().getHeight() * nativeImage.get().getWidth() * nativeImage.get().format().components());
+
+        nativeImageBuffer.put(imageBytes);
+
+        Minecraft.getInstance().executeBlocking(() -> {
+            DynamicTexture texture = new DynamicTexture(identifier::toString, nativeImage.get());
+            Minecraft.getInstance().getTextureManager().register(identifier, texture);
+        });
+    }
+
+    public static void saveRgbaBytesAsIdentifier(byte[] imageBytes, int width, int height, Identifier identifier) {
+        AtomicReference<NativeImage> nativeImage = new AtomicReference<>();
+        Minecraft.getInstance().executeBlocking(() ->
+                nativeImage.set(new NativeImage(NativeImage.Format.RGBA, width, height, false)));
+
+        ByteBuffer nativeImageBuffer = MemoryUtil.memByteBuffer(nativeImage.get().getPointer(),
+                nativeImage.get().getHeight() * nativeImage.get().getWidth() * nativeImage.get().format().components());
+
+        nativeImageBuffer.put(imageBytes);
+
+        Minecraft.getInstance().executeBlocking(() -> {
+            DynamicTexture texture = new DynamicTexture(identifier::toString, nativeImage.get());
+            Minecraft.getInstance().getTextureManager().register(identifier, texture);
+        });
+    }
+
+    public static CompletableFuture<Void> saveBufferedImageAsIdentifierAsync(BufferedImage bufferedImage, Identifier identifier) {
+        return CompletableFuture.supplyAsync(() -> {
+            saveBufferedImageAsIdentifier(bufferedImage, identifier);
+            return null;
+        }, imageDecodeExecutor);
+    }
+
+    private CompletableFuture<DecodedMedia> downloadImageBuffer(String urlStr) {
+        if (!isValid(urlStr)) {
+            SignedPaintingsClient.info("Rejected invalid or non-HTTPS URL: " + urlStr, false);
+            return CompletableFuture.completedFuture(null);
+        }
+
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                byte[] bytes = fetchHttpsBytesSafely(urlStr, 0);
+                if (bytes == null || bytes.length == 0) {
+                    return null;
+                }
+                return MediaDecoderRegistry.decode(bytes, mediaConfig);
+            } catch (Exception e) {
+                SignedPaintingsClient.info("error loading media " + urlStr + " : " + e, true);
+                return null;
+            }
+        }, imageDecodeExecutor);
+    }
+
+    private byte[] fetchHttpsBytesSafely(String urlStr, int redirectDepth) throws IOException, InterruptedException {
+        URI uri = UrlSecurityValidator.validateAndResolveHttpsUri(urlStr);
+
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+                .uri(uri)
+                .GET()
+                .timeout(Duration.ofSeconds(30))
+                .header("User-Agent", "Signed Paintings mod");
+
+        if (uri.getHost().equalsIgnoreCase("i.imgur.com")) {
+            requestBuilder.header("Sec-Fetch-Site", "same-site");
+            requestBuilder.header("Referer", "https://imgur.com/");
+        }
+
+        HttpResponse<InputStream> response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofInputStream());
+        int status = response.statusCode();
+
+        if (status >= 300 && status < 400) {
+            try (InputStream ignored = response.body()) {
+                // close body before following redirect
+            }
+            if (redirectDepth >= MAX_REDIRECTS) {
+                throw new IOException("Too many redirects for " + urlStr);
+            }
+            String location = response.headers().firstValue("Location").orElse(null);
+            if (location == null || location.isBlank()) {
+                throw new IOException("Redirect without Location header for " + urlStr);
+            }
+            URI nextUri = uri.resolve(location);
+            return fetchHttpsBytesSafely(nextUri.toString(), redirectDepth + 1);
+        }
+
+        if (status < 200 || status >= 300) {
+            try (InputStream ignored = response.body()) {
+                // drain/close
+            }
+            throw new IOException("HTTP status " + status + " for " + urlStr);
+        }
+
+        long contentLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
+        if (contentLength > mediaConfig.maxDownloadBytes) {
+            try (InputStream ignored = response.body()) {
+                // drain/close
+            }
+            throw new IOException("Media exceeds max download size (" + contentLength + " > " + mediaConfig.maxDownloadBytes + ")");
+        }
+
+        try (InputStream in = response.body();
+             ByteArrayOutputStream out = new ByteArrayOutputStream(contentLength > 0 && contentLength <= 65536 ? (int) contentLength : 16384)) {
+            byte[] buf = new byte[8192];
+            int total = 0;
+            int read;
+            while ((read = in.read(buf)) != -1) {
+                total += read;
+                if (total > mediaConfig.maxDownloadBytes) {
+                    throw new IOException("Media stream exceeds max download size (" + mediaConfig.maxDownloadBytes + ")");
+                }
+                out.write(buf, 0, read);
+            }
+            return out.toByteArray();
+        }
+    }
+
+    public static BufferedImage createRGBAImage(int width, int height) {
+        return MediaUtils.createRGBAImage(width, height);
+    }
+
+    public static BufferedImage scaleImage(BufferedImage referenceImage, int width, int height) {
+        return MediaUtils.scaleImage(referenceImage, width, height);
+    }
+
+    public static void removeImage(Identifier identifier) {
+        Minecraft.getInstance().execute(() -> Minecraft.getInstance().getTextureManager().release(identifier));
+    }
+
+    public static boolean hasImage(Identifier identifier) {
+        return getTexture(identifier) != null;
+    }
+
+    public static AbstractTexture getTexture(Identifier identifier) {
+        return ((TextureManagerAccessor)SignedPaintingsClient.client.getTextureManager()).getByPath().get(identifier);
+    }
+
+    public static boolean isValid(@NotNull String url) {
+        return UrlSecurityValidator.isValidHttpsUrl(url);
+    }
+
+    public void registerURLAlias(URLAlias urlAlias) {
+        // replace existing
+        for (URLAlias other : urlAliases) {
+            if (other.domain.equals(urlAlias.domain)) {
+                other.aliases = urlAlias.aliases;
+                other.defaultImageFormat = urlAlias.defaultImageFormat;
+                return;
+            }
+        }
+
+        urlAliases.add(urlAlias);
+    }
+
+    public boolean trustDomain(String domain) {
+        if (trustedDomains.add(domain)) {
+            SignedPaintingsClient.info("trusting domain "+domain, false);
+            reloadDomain(domain);
+            makeChange();
+            blockPromptedDomains.remove(domain);
+            return true;
+        }
+        return false;
+    }
+
+    public boolean untrustDomain(String domain) {
+        if (trustedDomains.remove(domain)) {
+            SignedPaintingsClient.info("untrusting domain "+domain, false);
+            reloadDomain(domain);
+            makeChange();
+            return true;
+        }
+        return false;
+    }
+
+    public boolean domainBlocked(String url) {
+        return false;
+    }
+
+    public String applyURLInferences(String text) {
+        // Reject explicit non-HTTPS schemes such as http://, ftp://, file://, etc.
+        int schemeIdx = text.indexOf("://");
+        if (schemeIdx != -1) {
+            String scheme = text.substring(0, schemeIdx);
+            if (!scheme.equalsIgnoreCase("https")) {
+                return text;
+            }
+        }
+
+        //for some reason "https://i.imgur.com/Avp3T5M.pngabcdefg..." is a valid link, so it should be counted as just .png
+        if (text.contains("i.imgur.com")) {
+            int index = text.lastIndexOf('.');
+            if (index != -1) {
+                String file = text.substring(index);
+                String domain = text.substring(0, index);
+                if (file.length() > 4 && (file.startsWith(".png") || file.startsWith(".gif") || file.startsWith(".jpg"))) {
+                    text = domain + file.substring(0, 4);
+                } else if (file.length() > 5 && (file.startsWith(".webp") || file.startsWith(".jpeg"))) {
+                    text = domain + file.substring(0, 5);
+                }
+            }
+        }
+
+        String url = applyURLAliases(text);
+        if (!url.contains("://")) {
+            url = "https://" + url;
+        }
+        return url;
+    }
+
+    private String applyURLAliases(String text) {
+        String url = text.contains("://") ? text.split("://", 2)[1] : text;
+        for (URLAlias urlAlias : urlAliases) {
+            url = urlAlias.tryApply(url);
+        }
+        return url;
+    }
+
+    public String getShortestURLInference(String url) {
+        if (url.startsWith("https://")) url = url.substring(8);
+        for (URLAlias urlAlias : urlAliases) {
+            url = urlAlias.getShortestAlias(url);
+        }
+        return url;
+    }
+
+    public int reloadAll() {
+        pendingImageLoads.clear();
+        int i = 0;
+        for (ImageData imageData : urlToImageData.values()) {
+            i += imageData.reload();
+        }
+        urlToImageData.clear();
+        itemNameToOverlay.clear();
+        blockPromptedDomains.clear();
+        renderTime = 0;
+        return i;
+    }
+
+    public int reloadDomain(String domain) {
+        if (domain.equals("https://")) {
+            return reloadAll();
+        }
+
+        int i = 0;
+        for (Iterator<Map.Entry<String, ImageData>> iterator = urlToImageData.entrySet().iterator(); iterator.hasNext();) {
+            Map.Entry<String, ImageData> imageData = iterator.next();
+            if (imageData.getKey().startsWith(domain)) {
+                i += imageData.getValue().reload();
+                iterator.remove();
+            }
+        }
+
+        return i;
+    }
+
+    public int reloadUrl(String url) {
+        ImageData imageData = urlToImageData.remove(url);
+        if (imageData != null) {
+            return imageData.reload();
+        }
+        return 0;
+    }
+
+    public ArrayList<ImageStatus> getAllStatus() {
+        ArrayList<ImageStatus> imageStatuses = new ArrayList<>();
+        urlToImageData.forEach((url, imageData) -> {
+            if (imageData.ready) {
+                imageStatuses.add(imageData.getStatus().setUrl(url));
+            }
+        });
+        return imageStatuses;
+    }
+
+    public ImageStatus getUrlStatus(String url) {
+        ImageData imageData = urlToImageData.get(url);
+        if (imageData != null) {
+            return imageData.getStatus().setUrl(url);
+        }
+        return null;
+    }
+
+    public int getUrlSuggestions(SuggestionsBuilder builder) {
+        for (Map.Entry<String, ImageData> entry : urlToImageData.entrySet()) {
+            if (entry.getValue().ready) {
+                builder.suggest(entry.getKey());
+            }
+        }
+        return urlToImageData.size();
+    }
+
+    public Set<String> getUrls() {
+        return urlToImageData.keySet();
+    }
+
+    public OverlayInfo getOverlayInfo(String name) {
+        OverlayInfo info = itemNameToOverlay.get(name);
+        if (info == null || info.needsReload()) {
+            info = new OverlayInfo();
+            info.loadOverlay(name);
+            itemNameToOverlay.put(name, info);
+        }
+        return info;
+    }
+
+    public void makeChange() {
+        changesMade = true;
+    }
+
+    public void onTick() {
+        renderTime++;
+        ImageData.tickDrainPendingSectionUpdates();
+
+        for (ImageData imageData : urlToImageData.values()) {
+            if (imageData.isAnimated()) {
+                imageData.tickAnimation(renderTime, mediaConfig.pauseOffscreen);
+            }
+        }
+
+        // check every ~50 seconds
+        if ((renderTime & 1023) == 0) {
+            save();
+
+            // expire from vram after ~2 minutes
+            int expireVram = renderTime - 1536;
+            // expire fully after ~15 minutes
+            int expireFully = renderTime - 16384;
+            urlToImageData.values().removeIf(imageData -> imageData.checkRenderTime(expireVram, expireFully));
+
+            for (ImageData imageData : urlToImageData.values()) {
+                imageData.pruneSectionUpdateListeners();
+            }
+
+            if (urlToImageData.isEmpty()) {
+                renderTime = 0;
+            }
+        }
+    }
+}
