@@ -118,6 +118,7 @@ public abstract class SignBlockEntityMixin extends BlockEntity implements SignBl
 
     @Inject(at = @At("TAIL"), method = "loadAdditional")
     private void onNBTRead(ValueInput view, CallbackInfo ci) {
+        if (this.level != null && !this.level.isClientSide()) return;
         frontInfo.text = frontText;
         backInfo.text = backText;
         SignedPaintingsClient.info("nbt read "+frontText.getMessage(0, false).toString()+" at "+getBlockPos(), false);

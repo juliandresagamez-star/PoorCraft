@@ -35,10 +35,16 @@ import java.io.*;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.*;
+import java.util.List;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class ImageManager {
@@ -46,8 +52,15 @@ public class ImageManager {
     private final int dataVersion = 2;
     private final File data;
 
+    private static final AtomicInteger DECODE_THREAD_COUNTER = new AtomicInteger(1);
+
     private static final ExecutorService imageDecodeExecutor = Executors.newFixedThreadPool(
-            Math.max(4, Runtime.getRuntime().availableProcessors())
+            Math.max(4, Runtime.getRuntime().availableProcessors()),
+            runnable -> {
+                Thread thread = new Thread(runnable, "SignedPaintings-ImageDecode-" + DECODE_THREAD_COUNTER.getAndIncrement());
+                thread.setDaemon(true);
+                return thread;
+            }
     );
 
     private static final int MAX_REDIRECTS = 3;
@@ -58,10 +71,10 @@ public class ImageManager {
             .build();
     public final MediaConfig mediaConfig = new MediaConfig();
     private final ArrayList<URLAlias> urlAliases;
-    private final Map<Identifier, Boolean> translucencyCache = new HashMap<>();
-    private final HashMap<String, ImageData> urlToImageData;
+    private final Map<Identifier, Boolean> translucencyCache = new ConcurrentHashMap<>();
+    private final Map<String, ImageData> urlToImageData;
     private final HashMap<String, OverlayInfo> itemNameToOverlay;
-    private final HashMap<String, ArrayList<ImageDataLoadInterface>> pendingImageLoads;
+    private final Map<String, List<ImageDataLoadInterface>> pendingImageLoads;
     public final ArrayList<String> blockedURLs;
     public final Set<String> trustedDomains;
     public final Set<String> blockPromptedDomains;
@@ -70,14 +83,19 @@ public class ImageManager {
 
     private boolean changesMade = false;
     public boolean hasTranslucency(Identifier id) {
-        return translucencyCache.getOrDefault(id, false);
+        return id != null && translucencyCache.getOrDefault(id, false);
     }
 
     public void cacheTranslucency(Identifier id, boolean hasTranslucency) {
-        translucencyCache.put(id, hasTranslucency);
+        if (id != null) {
+            translucencyCache.put(id, hasTranslucency);
+        }
     }
 
     private void checkAndCacheTranslucency(Identifier id, BufferedImage bufferedImage) {
+        if (id == null) {
+            return;
+        }
         if (bufferedImage == null) {
             translucencyCache.put(id, false);
             SignedPaintingsClient.info("Cannot check transparency for null BufferedImage: " + id, false);
@@ -116,9 +134,9 @@ public class ImageManager {
 
     public ImageManager() {
         urlAliases = new ArrayList<>();
-        urlToImageData = new HashMap<>();
+        urlToImageData = new ConcurrentHashMap<>();
         itemNameToOverlay = new HashMap<>();
-        pendingImageLoads = new HashMap<>();
+        pendingImageLoads = new ConcurrentHashMap<>();
         blockedURLs = new ArrayList<>();
         trustedDomains = new HashSet<>();
         blockPromptedDomains = new HashSet<>();
@@ -247,6 +265,12 @@ public class ImageManager {
         }
     }
 
+    public void shutdown() {
+        save();
+        imageDecodeExecutor.shutdownNow();
+        httpClient.shutdownNow();
+    }
+
     //https://github.com/Patbox/Image2Map/blob/1.20/src/main/java/space/essem/image2map/Image2Map.java
     public void loadImage(String url, ImageDataLoadInterface onLoadCallback) {
         if (url.equals("https://") || !isValid(url)) return;
@@ -270,40 +294,89 @@ public class ImageManager {
         if (imageData != null) {
             if (imageData.ready || blocked) {
                 onLoadCallback.onLoad(imageData);
-            } else if (pendingImageLoads.containsKey(url)) {
-                pendingImageLoads.get(url).add(onLoadCallback);
+            } else {
+                List<ImageDataLoadInterface> pending = pendingImageLoads.get(url);
+                if (pending != null) {
+                    synchronized (pending) {
+                        if (imageData.ready) {
+                            onLoadCallback.onLoad(imageData);
+                        } else {
+                            pending.add(onLoadCallback);
+                        }
+                    }
+                } else if (imageData.ready) {
+                    onLoadCallback.onLoad(imageData);
+                }
             }
         } else {
-            ArrayList<ImageDataLoadInterface> list = new ArrayList<>();
+            List<ImageDataLoadInterface> list = new CopyOnWriteArrayList<>();
             list.add(onLoadCallback);
             registerImage(url, list, blocked);
         }
 
     }
 
-    private void registerImage(String url, ArrayList<ImageDataLoadInterface> onLoadCallbacks, boolean blocked) {
+    private void registerImage(String url, List<ImageDataLoadInterface> onLoadCallbacks, boolean blocked) {
         ImageData data = new ImageData();
-        urlToImageData.put(url, data);
         if (blocked) {
+            ImageData existing = urlToImageData.putIfAbsent(url, data);
+            ImageData target = existing != null ? existing : data;
             for (ImageDataLoadInterface imageDataLoadInterface : onLoadCallbacks) {
-                imageDataLoadInterface.onLoad(data);
+                imageDataLoadInterface.onLoad(target);
             }
             return;
         }
-        pendingImageLoads.put(url, onLoadCallbacks);
+        pendingImageLoads.putIfAbsent(url, onLoadCallbacks);
+        ImageData existing = urlToImageData.putIfAbsent(url, data);
+        if (existing != null) {
+            if (existing.ready) {
+                for (ImageDataLoadInterface cb : onLoadCallbacks) {
+                    cb.onLoad(existing);
+                }
+            } else {
+                List<ImageDataLoadInterface> pending = pendingImageLoads.get(url);
+                if (pending != null && pending != onLoadCallbacks) {
+                    synchronized (pending) {
+                        if (existing.ready) {
+                            for (ImageDataLoadInterface cb : onLoadCallbacks) {
+                                cb.onLoad(existing);
+                            }
+                        } else {
+                            pending.addAll(onLoadCallbacks);
+                        }
+                    }
+                } else if (existing.ready) {
+                    for (ImageDataLoadInterface cb : onLoadCallbacks) {
+                        cb.onLoad(existing);
+                    }
+                }
+            }
+            return;
+        }
+        List<ImageDataLoadInterface> activeCallbacks = pendingImageLoads.computeIfAbsent(url, _ -> onLoadCallbacks);
+        if (activeCallbacks != onLoadCallbacks) {
+            synchronized (activeCallbacks) {
+                activeCallbacks.addAll(onLoadCallbacks);
+            }
+        }
         SignedPaintingsClient.info("Started loading media from "+url, false);
         downloadImageBuffer(url).orTimeout(60, TimeUnit.SECONDS).handleAsync((media, ex) -> {
             if (media == null || ex != null) {
-                urlToImageData.remove(url);
-                pendingImageLoads.remove(url);
+                urlToImageData.remove(url, data);
+                pendingImageLoads.remove(url, activeCallbacks);
                 SignedPaintingsClient.info("Couldn't load media "+url+"\n"+(ex != null ? ex.toString() : "null"), true);
             } else {
                 SignedPaintingsClient.info("Loaded media "+url+" ("+media.format+", "+media.frames.size()+" frames)", false);
                 onMediaLoad(media, url, data);
-                for (ImageDataLoadInterface imageDataLoadInterface : onLoadCallbacks) {
+                List<ImageDataLoadInterface> toNotify;
+                synchronized (activeCallbacks) {
+                    pendingImageLoads.remove(url, activeCallbacks);
+                    toNotify = new ArrayList<>(activeCallbacks);
+                    activeCallbacks.clear();
+                }
+                for (ImageDataLoadInterface imageDataLoadInterface : toNotify) {
                     imageDataLoadInterface.onLoad(data);
                 }
-                pendingImageLoads.remove(url);
             }
             return null;
         });
@@ -369,30 +442,64 @@ public class ImageManager {
     }
 
     public static CompletableFuture<Void> saveBufferedImageAsIdentifierAsync(BufferedImage bufferedImage, Identifier identifier) {
-        return CompletableFuture.supplyAsync(() -> {
-            saveBufferedImageAsIdentifier(bufferedImage, identifier);
-            return null;
-        }, imageDecodeExecutor);
+        if (imageDecodeExecutor.isShutdown()) {
+            return CompletableFuture.failedFuture(new CancellationException("Client is shutting down"));
+        }
+        try {
+            return CompletableFuture.supplyAsync(() -> {
+                if (imageDecodeExecutor.isShutdown() || Thread.currentThread().isInterrupted()) {
+                    throw new CancellationException("Client is shutting down");
+                }
+                saveBufferedImageAsIdentifier(bufferedImage, identifier);
+                return null;
+            }, imageDecodeExecutor);
+        } catch (RejectedExecutionException e) {
+            return CompletableFuture.failedFuture(e);
+        }
+    }
+
+    public static CompletableFuture<Void> saveRgbaBytesAsIdentifierAsync(byte[] imageBytes, int width, int height, Identifier identifier) {
+        if (imageDecodeExecutor.isShutdown()) {
+            return CompletableFuture.failedFuture(new CancellationException("Client is shutting down"));
+        }
+        try {
+            return CompletableFuture.supplyAsync(() -> {
+                if (imageDecodeExecutor.isShutdown() || Thread.currentThread().isInterrupted()) {
+                    throw new CancellationException("Client is shutting down");
+                }
+                saveRgbaBytesAsIdentifier(imageBytes, width, height, identifier);
+                return null;
+            }, imageDecodeExecutor);
+        } catch (RejectedExecutionException e) {
+            return CompletableFuture.failedFuture(e);
+        }
     }
 
     private CompletableFuture<DecodedMedia> downloadImageBuffer(String urlStr) {
+        if (imageDecodeExecutor.isShutdown()) {
+            return CompletableFuture.completedFuture(null);
+        }
         if (!isValid(urlStr)) {
             SignedPaintingsClient.info("Rejected invalid or non-HTTPS URL: " + urlStr, false);
             return CompletableFuture.completedFuture(null);
         }
 
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                byte[] bytes = fetchHttpsBytesSafely(urlStr, 0);
-                if (bytes == null || bytes.length == 0) {
+        try {
+            return CompletableFuture.supplyAsync(() -> {
+                try {
+                    byte[] bytes = fetchHttpsBytesSafely(urlStr, 0);
+                    if (bytes == null || bytes.length == 0) {
+                        return null;
+                    }
+                    return MediaDecoderRegistry.decode(bytes, mediaConfig);
+                } catch (Exception e) {
+                    SignedPaintingsClient.info("error loading media " + urlStr + " : " + e, true);
                     return null;
                 }
-                return MediaDecoderRegistry.decode(bytes, mediaConfig);
-            } catch (Exception e) {
-                SignedPaintingsClient.info("error loading media " + urlStr + " : " + e, true);
-                return null;
-            }
-        }, imageDecodeExecutor);
+            }, imageDecodeExecutor);
+        } catch (RejectedExecutionException e) {
+            return CompletableFuture.completedFuture(null);
+        }
     }
 
     private byte[] fetchHttpsBytesSafely(String urlStr, int redirectDepth) throws IOException, InterruptedException {
@@ -467,7 +574,13 @@ public class ImageManager {
     }
 
     public static void removeImage(Identifier identifier) {
-        Minecraft.getInstance().execute(() -> Minecraft.getInstance().getTextureManager().release(identifier));
+        if (identifier == null) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.isSameThread()) {
+            mc.getTextureManager().release(identifier);
+        } else {
+            mc.execute(() -> mc.getTextureManager().release(identifier));
+        }
     }
 
     public static boolean hasImage(Identifier identifier) {
@@ -475,6 +588,7 @@ public class ImageManager {
     }
 
     public static AbstractTexture getTexture(Identifier identifier) {
+        if (identifier == null) return null;
         return ((TextureManagerAccessor)SignedPaintingsClient.client.getTextureManager()).getByPath().get(identifier);
     }
 
@@ -598,6 +712,7 @@ public class ImageManager {
     }
 
     public int reloadUrl(String url) {
+        if (url == null) return 0;
         ImageData imageData = urlToImageData.remove(url);
         if (imageData != null) {
             return imageData.reload();
@@ -616,6 +731,7 @@ public class ImageManager {
     }
 
     public ImageStatus getUrlStatus(String url) {
+        if (url == null) return null;
         ImageData imageData = urlToImageData.get(url);
         if (imageData != null) {
             return imageData.getStatus().setUrl(url);

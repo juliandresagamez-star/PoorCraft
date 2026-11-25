@@ -190,6 +190,20 @@ public abstract class AbstractSignEditScreenMixin extends Screen implements Abst
 
     @Inject(at = @At("TAIL"), method = "onDone")
     private void onScreenClose(CallbackInfo ci) {
+        clearEditingState();
+    }
+
+    @Inject(at = @At("TAIL"), method = "removed")
+    private void onScreenRemoved(CallbackInfo ci) {
+        clearEditingState();
+    }
+
+    @Unique
+    private void clearEditingState() {
+        PaintingInfo info = getInfo();
+        if (info != null) {
+            info.working = false;
+        }
         SignedPaintingsClient.currentSignEdit = null;
     }
 

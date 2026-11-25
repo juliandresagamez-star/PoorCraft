@@ -22,26 +22,26 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ImageData {
-    private BufferedImage baseImage;
-    private Identifier baseIdentifier;
-    private Identifier workingIdentifier;
+    private volatile BufferedImage baseImage;
+    private volatile Identifier baseIdentifier;
+    private volatile Identifier workingIdentifier;
     private final ConcurrentHashMap<Vector2i, VariantData> images = new ConcurrentHashMap<>();
     private final Set<Identifier> loadingImages = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
-    private List<MediaFrame> animatedFrames;
+    private volatile List<MediaFrame> animatedFrames;
     private int totalDurationMs = 0;
-    private int currentUploadedFrame = -1;
+    private volatile int currentUploadedFrame = -1;
     private volatile int lastAnimatedRenderTime = -1;
 
-    public boolean ready = false;
-    public boolean needsReload = false;
+    public volatile boolean ready = false;
+    public volatile boolean needsReload = false;
 
     public int width;
     public int height;
 
-    private int workingWidth;
-    private int workingHeight;
-    private int workingRenderTime = -1;
+    private volatile int workingWidth;
+    private volatile int workingHeight;
+    private volatile int workingRenderTime = -1;
 
     private int expiredAllAt = -1;
 
@@ -152,7 +152,8 @@ public class ImageData {
     }
 
     public boolean isAnimated() {
-        return animatedFrames != null && animatedFrames.size() > 1;
+        List<MediaFrame> frames = animatedFrames;
+        return frames != null && frames.size() > 1;
     }
 
     /**
@@ -160,7 +161,9 @@ public class ImageData {
      * Skips uploads when off-screen (not rendered recently) to save CPU/GPU bandwidth.
      */
     public void tickAnimation(int currentRenderTime, boolean pauseOffscreen) {
-        if (!ready || !isAnimated() || baseIdentifier == null) {
+        List<MediaFrame> frames = this.animatedFrames;
+        Identifier targetId = this.baseIdentifier;
+        if (!ready || frames == null || frames.size() <= 1 || targetId == null) {
             return;
         }
 
@@ -168,12 +171,12 @@ public class ImageData {
             return;
         }
 
-        int frameIndex = computeCurrentFrameIndex();
+        int frameIndex = computeCurrentFrameIndex(frames);
         if (frameIndex == currentUploadedFrame) {
             return;
         }
 
-        AbstractTexture tex = ImageManager.getTexture(baseIdentifier);
+        AbstractTexture tex = ImageManager.getTexture(targetId);
         if (!(tex instanceof DynamicTexture dynamicTexture)) {
             return;
         }
@@ -183,7 +186,7 @@ public class ImageData {
             return;
         }
 
-        MediaFrame frame = animatedFrames.get(frameIndex);
+        MediaFrame frame = frames.get(frameIndex);
         if (frame.width != pixels.getWidth() || frame.height != pixels.getHeight()) {
             return;
         }
@@ -195,12 +198,12 @@ public class ImageData {
         currentUploadedFrame = frameIndex;
     }
 
-    private int computeCurrentFrameIndex() {
+    private int computeCurrentFrameIndex(List<MediaFrame> frames) {
         int duration = Math.max(totalDurationMs, 50);
         int elapsed = (int) (System.currentTimeMillis() % duration);
         int acc = 0;
-        for (int i = 0; i < animatedFrames.size(); i++) {
-            acc += animatedFrames.get(i).delayMs;
+        for (int i = 0; i < frames.size(); i++) {
+            acc += frames.get(i).delayMs;
             if (elapsed < acc) {
                 return i;
             }
@@ -213,57 +216,120 @@ public class ImageData {
     }
 
     public Identifier getIdentifier(int width, int height, boolean working) {
+        if (!ready) {
+            return null;
+        }
+
         expiredAllAt = -1;
 
-        if (isAnimated() && ready && baseIdentifier != null) {
+        if (isAnimated() && baseIdentifier != null) {
             int now = SignedPaintingsClient.imageManager.renderTime;
             lastAnimatedRenderTime = now;
             if (working) {
                 workingRenderTime = now;
-            } else {
-                VariantData variantData = images.get(new Vector2i(this.width, this.height));
-                if (variantData != null) {
-                    variantData.renderTime = now;
-                }
             }
-            return baseIdentifier;
+
+            Vector2i resolution = new Vector2i(this.width, this.height);
+            VariantData variantData = images.get(resolution);
+            Identifier targetId = this.baseIdentifier;
+            if (variantData != null) {
+                if (ImageManager.hasImage(targetId)) {
+                    variantData.renderTime = now;
+                    return targetId;
+                }
+                images.remove(resolution, variantData);
+            }
+
+            List<MediaFrame> frames = this.animatedFrames;
+            if (frames != null && !frames.isEmpty() && targetId != null && loadingImages.add(targetId)) {
+                int frameIndex = computeCurrentFrameIndex(frames);
+                MediaFrame frame = frames.get(frameIndex);
+                ImageManager.saveRgbaBytesAsIdentifierAsync(frame.rgbaBytes, frame.width, frame.height, targetId)
+                        .handleAsync((v, e) -> {
+                            if (e != null) {
+                                loadingImages.remove(targetId);
+                                return null;
+                            }
+                            if (!ready) {
+                                ImageManager.removeImage(targetId);
+                                loadingImages.remove(targetId);
+                                return null;
+                            }
+                            currentUploadedFrame = frameIndex;
+                            images.put(resolution, new VariantData(targetId));
+                            loadingImages.remove(targetId);
+                            notifySectionUpdateListeners(targetId);
+                            return null;
+                        });
+            }
+            return targetId;
         }
 
         Vector2i resolution = new Vector2i(width, height);
         VariantData variantData = images.get(resolution);
         if (variantData != null) {
-            variantData.renderTime = SignedPaintingsClient.imageManager.renderTime;
-            return variantData.identifier;
+            if (ImageManager.hasImage(variantData.identifier)) {
+                variantData.renderTime = SignedPaintingsClient.imageManager.renderTime;
+                return variantData.identifier;
+            }
+            images.remove(resolution, variantData);
+        }
+
+        BufferedImage currentBase = this.baseImage;
+        if (currentBase == null) {
+            return null;
         }
 
         if (working) {
-            if (workingIdentifier == null) return null;
+            Identifier currentWorkingId = this.workingIdentifier;
+            if (currentWorkingId == null) return null;
             workingRenderTime = SignedPaintingsClient.imageManager.renderTime;
-            if (width != workingWidth || height != workingHeight) {
-                workingWidth = width;
-                workingHeight = height;
-                ImageManager.saveBufferedImageAsIdentifier(ImageManager.scaleImage(baseImage, width, height), workingIdentifier);
+            if (width != workingWidth || height != workingHeight || !ImageManager.hasImage(currentWorkingId)) {
+                if (Minecraft.getInstance().isSameThread()) {
+                    workingWidth = width;
+                    workingHeight = height;
+                    ImageManager.saveBufferedImageAsIdentifier(ImageManager.scaleImage(currentBase, width, height), currentWorkingId);
+                } else if (loadingImages.add(currentWorkingId)) {
+                    BufferedImage scaled = ImageManager.scaleImage(currentBase, width, height);
+                    ImageManager.saveBufferedImageAsIdentifierAsync(scaled, currentWorkingId).handleAsync((v, e) -> {
+                        if (e != null || !ready) {
+                            if (!ready) {
+                                ImageManager.removeImage(currentWorkingId);
+                            }
+                            loadingImages.remove(currentWorkingId);
+                            return null;
+                        }
+                        workingWidth = width;
+                        workingHeight = height;
+                        loadingImages.remove(currentWorkingId);
+                        notifySectionUpdateListeners(currentWorkingId);
+                        return null;
+                    });
+                }
             }
-            return workingIdentifier;
+            return currentWorkingId;
         } else {
-            if (baseIdentifier == null) return null;
-            Identifier identifier;
-            BufferedImage bufferedImage;
-
-            if (width == this.width && height == this.height) {
-                identifier = baseIdentifier;
-                bufferedImage = baseImage;
-            } else {
-                identifier = baseIdentifier.withSuffix("_" + width + "x" + height);
-                bufferedImage = ImageManager.scaleImage(baseImage, width, height);
-            }
+            Identifier currentBaseId = this.baseIdentifier;
+            if (currentBaseId == null) return null;
+            Identifier identifier = (width == this.width && height == this.height)
+                    ? currentBaseId
+                    : currentBaseId.withSuffix("_" + width + "x" + height);
 
             if (!loadingImages.add(identifier)) {
                 return identifier;
             }
 
+            BufferedImage bufferedImage = (width == this.width && height == this.height)
+                    ? currentBase
+                    : ImageManager.scaleImage(currentBase, width, height);
+
             ImageManager.saveBufferedImageAsIdentifierAsync(bufferedImage, identifier).handleAsync((v, e) -> {
                 if (e != null) {
+                    loadingImages.remove(identifier);
+                    return null;
+                }
+                if (!ready) {
+                    ImageManager.removeImage(identifier);
                     loadingImages.remove(identifier);
                     return null;
                 }
@@ -296,6 +362,11 @@ public class ImageData {
         animatedFrames = null;
         currentUploadedFrame = -1;
         baseImage = null;
+
+        workingWidth = 0;
+        workingHeight = 0;
+        workingRenderTime = -1;
+        loadingImages.clear();
 
         needsReload = true;
         images.clear();
@@ -330,6 +401,9 @@ public class ImageData {
                 SignedPaintingsClient.info("removing expired image variant " + variantData.identifier, false);
                 ImageManager.removeImage(variantData.identifier);
                 iterator.remove();
+                if (isAnimated() && variantData.identifier.equals(baseIdentifier)) {
+                    currentUploadedFrame = -1;
+                }
             }
         }
 
@@ -338,6 +412,8 @@ public class ImageData {
             if (workingIdentifier != null) {
                 ImageManager.removeImage(workingIdentifier);
             }
+            workingWidth = 0;
+            workingHeight = 0;
             workingRenderTime = -1;
         }
 

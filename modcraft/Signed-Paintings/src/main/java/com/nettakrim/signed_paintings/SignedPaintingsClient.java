@@ -5,6 +5,7 @@ import com.nettakrim.signed_paintings.gui.SignEditingInfo;
 import com.nettakrim.signed_paintings.rendering.PaintingRenderer;
 import com.nettakrim.signed_paintings.util.*;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
@@ -68,6 +69,12 @@ public class SignedPaintingsClient implements ClientModInitializer {
 			}
 
 			imageManager.onTick();
+		});
+
+		ClientLifecycleEvents.CLIENT_STOPPING.register(minecraft -> {
+			if (imageManager != null) {
+				imageManager.shutdown();
+			}
 		});
 
 		SignedPaintingsCommands.initialize();

@@ -21,6 +21,7 @@
     "compat.fabrication.FabricationFixMixin",
     "compat.bbe.BBEAbstractSignRendererMixin",
     "compat.bbe.SpecialBlockEntityManagerMixin",
+    "compat.bbe.SpecialBlockEntityManagerExtractMixin",
     "compat.sodium.AbstractBlockRenderContextAccessor",
     "compat.sodium.SodiumBlockRendererMixin"
   ],
