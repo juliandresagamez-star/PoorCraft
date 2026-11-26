@@ -1,0 +1,15 @@
+{
+ "parent": "pooltable:item/cue",
+ "display": {
+  "firstperson_righthand": {
+   "rotation": [45, 0, 0],
+   "translation": [1.22, 14.57, 14.65],
+   "scale": [2.29, 2.29, 2.29]
+  },
+  "firstperson_lefthand": {
+   "rotation": [45, 0, 0],
+   "translation": [1.22, 14.57, 14.65],
+   "scale": [2.29, 2.29, 2.29]
+  }
+ }
+}

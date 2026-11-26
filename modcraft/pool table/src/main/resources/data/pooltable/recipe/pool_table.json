@@ -1,0 +1,36 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "WWW",
+    "PPP",
+    "L L"
+  ],
+  "key": {
+    "W": "minecraft:green_wool",
+    "P": {
+      "neoforge:ingredient_type": "neoforge:difference",
+      "base": "#minecraft:planks",
+      "subtracted": [
+        "minecraft:oak_planks",
+        "minecraft:spruce_planks",
+        "minecraft:birch_planks",
+        "minecraft:dark_oak_planks",
+        "minecraft:cherry_planks"
+      ]
+    },
+    "L": "#minecraft:logs"
+  },
+  "result": {
+    "id": "pooltable:pool_table",
+    "count": 1
+  },
+  "fabric:load_conditions": [
+    {
+      "condition": "fabric:all_mods_loaded",
+      "values": [
+        "neoforge"
+      ]
+    }
+  ]
+}

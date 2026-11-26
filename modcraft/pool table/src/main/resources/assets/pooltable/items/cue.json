@@ -1,0 +1,22 @@
+{
+  "model": {
+    "type": "minecraft:condition",
+    "property": "pooltable:aiming",
+    "on_true": {
+      "type": "minecraft:model",
+      "model": "pooltable:item/cue_aiming"
+    },
+    "on_false": {
+      "type": "minecraft:condition",
+      "property": "pooltable:vr",
+      "on_true": {
+        "type": "minecraft:model",
+        "model": "pooltable:item/cue_vr"
+      },
+      "on_false": {
+        "type": "minecraft:model",
+        "model": "pooltable:item/cue"
+      }
+    }
+  }
+}

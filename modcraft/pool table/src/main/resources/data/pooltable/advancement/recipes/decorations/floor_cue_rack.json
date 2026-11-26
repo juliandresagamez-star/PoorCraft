@@ -1,0 +1,25 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_cue": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": "pooltable:cue"
+          }
+        ]
+      }
+    }
+  },
+  "requirements": [
+    [
+      "has_cue"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "pooltable:floor_cue_rack"
+    ]
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "ball_hit": {
+    "subtitle": "subtitles.pooltable.ball_hit",
+    "sounds": [
+      "pooltable:ball_hit1",
+      "pooltable:ball_hit2",
+      "pooltable:ball_hit3",
+      "pooltable:ball_hit4"
+    ]
+  },
+  "cushion": {
+    "subtitle": "subtitles.pooltable.cushion",
+    "sounds": [
+      "pooltable:cushion1",
+      "pooltable:cushion2",
+      "pooltable:cushion3"
+    ]
+  },
+  "pocket": {
+    "subtitle": "subtitles.pooltable.pocket",
+    "sounds": [
+      "pooltable:pocket1",
+      "pooltable:pocket2",
+      "pooltable:pocket3"
+    ]
+  },
+  "cue_hit": {
+    "subtitle": "subtitles.pooltable.cue_hit",
+    "sounds": [
+      "pooltable:cue_hit1",
+      "pooltable:cue_hit2",
+      "pooltable:cue_hit3"
+    ]
+  },
+  "rack": {
+    "subtitle": "subtitles.pooltable.rack",
+    "sounds": [
+      "pooltable:rack1"
+    ]
+  }
+}

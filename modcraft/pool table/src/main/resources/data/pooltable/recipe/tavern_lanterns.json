@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "CDC",
+    "LLL"
+  ],
+  "key": {
+    "C": "minecraft:iron_chain",
+    "D": "minecraft:dark_oak_log",
+    "L": "minecraft:lantern"
+  },
+  "result": {
+    "id": "pooltable:tavern_lanterns",
+    "count": 1
+  }
+}

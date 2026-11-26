@@ -1,0 +1,25 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_green_wool": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": "minecraft:green_wool"
+          }
+        ]
+      }
+    }
+  },
+  "requirements": [
+    [
+      "has_green_wool"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "pooltable:spruce_pool_table"
+    ]
+  }
+}

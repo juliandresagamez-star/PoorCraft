@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "BCB",
+    "MLM",
+    "BCB"
+  ],
+  "key": {
+    "B": "minecraft:iron_bars",
+    "C": "minecraft:cyan_dye",
+    "M": "minecraft:magenta_dye",
+    "L": "minecraft:glowstone"
+  },
+  "result": {
+    "id": "pooltable:neon_grid_lamp",
+    "count": 1
+  }
+}

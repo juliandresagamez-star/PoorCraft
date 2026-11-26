@@ -1,0 +1,28 @@
+{
+  "parent": "pooltable:pool/win",
+  "display": {
+    "icon": {
+      "id": "minecraft:emerald"
+    },
+    "title": {
+      "translate": "advancements.pooltable.beat_expert.title"
+    },
+    "description": {
+      "translate": "advancements.pooltable.beat_expert.description"
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "done": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "requirements": [
+    [
+      "done"
+    ]
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "parent": "pooltable:pool/root",
+  "display": {
+    "icon": {
+      "id": "pooltable:cue"
+    },
+    "title": {
+      "translate": "advancements.pooltable.break.title"
+    },
+    "description": {
+      "translate": "advancements.pooltable.break.description"
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "done": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "requirements": [
+    [
+      "done"
+    ]
+  ]
+}

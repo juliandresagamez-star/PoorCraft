@@ -1,0 +1,25 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_table": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": "pooltable:pool_table"
+          }
+        ]
+      }
+    }
+  },
+  "requirements": [
+    [
+      "has_table"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "pooltable:tiffany_lamp"
+    ]
+  }
+}

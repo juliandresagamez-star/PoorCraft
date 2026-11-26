@@ -1,0 +1,10 @@
+{
+ "parent": "pooltable:block/table/p6",
+ "textures": {
+  "rail": "pooltable:block/cherry_rail",
+  "rail_side": "pooltable:block/cherry_rail_side",
+  "rail_under": "pooltable:block/cherry_rail_under",
+  "leg": "pooltable:block/cherry_leg",
+  "particle": "pooltable:block/cherry_rail"
+ }
+}

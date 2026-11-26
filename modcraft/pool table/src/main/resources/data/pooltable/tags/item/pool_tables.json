@@ -1,0 +1,11 @@
+{
+  "replace": false,
+  "values": [
+    "pooltable:pool_table",
+    "pooltable:oak_pool_table",
+    "pooltable:spruce_pool_table",
+    "pooltable:birch_pool_table",
+    "pooltable:dark_oak_pool_table",
+    "pooltable:cherry_pool_table"
+  ]
+}

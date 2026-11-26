@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "RER",
+    "E E",
+    "RER"
+  ],
+  "key": {
+    "R": "minecraft:prismarine_crystals",
+    "E": "minecraft:end_rod"
+  },
+  "result": {
+    "id": "pooltable:halo_lamp",
+    "count": 1
+  }
+}

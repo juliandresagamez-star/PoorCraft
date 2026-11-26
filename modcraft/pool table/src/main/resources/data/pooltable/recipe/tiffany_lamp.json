@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "NCN",
+    "GLG",
+    "GGG"
+  ],
+  "key": {
+    "N": "minecraft:gold_nugget",
+    "C": "minecraft:iron_chain",
+    "L": "minecraft:glowstone",
+    "G": "minecraft:orange_stained_glass_pane"
+  },
+  "result": {
+    "id": "pooltable:tiffany_lamp",
+    "count": 1
+  }
+}

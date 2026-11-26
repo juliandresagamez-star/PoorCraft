@@ -1,0 +1,28 @@
+{
+  "parent": "pooltable:pool/win",
+  "display": {
+    "icon": {
+      "id": "minecraft:ender_pearl"
+    },
+    "title": {
+      "translate": "advancements.pooltable.break_and_run.title"
+    },
+    "description": {
+      "translate": "advancements.pooltable.break_and_run.description"
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "done": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "requirements": [
+    [
+      "done"
+    ]
+  ]
+}

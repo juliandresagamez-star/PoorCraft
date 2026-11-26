@@ -1,0 +1,15 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.ash.pooltable.mixin",
+  "client": [
+    "CameraMixin",
+    "ClientInputAccess",
+    "EntityRenderDispatcherMixin",
+    "EntityTurnMixin",
+    "GameRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "pooltable",
+  "version": "${version}",
+  "name": "Pool Table",
+  "description": "A full-size 3 x 5 block pool table with real ball physics, 2-5 player Cutthroat and optional team matches. Line up in the ball camera behind the white, draw back and shoot, then watch it play out from the table camera.",
+  "authors": ["FunkyMonkey95"],
+  "license": "MIT",
+  "icon": "assets/pooltable/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["dev.ash.pooltable.PoolTable"],
+    "client": ["dev.ash.pooltable.client.PoolClient"]
+  },
+  "mixins": [
+    "pooltable.mixins.json",
+    "pooltable.fabric.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.18.4",
+    "minecraft": ">=26.2 <26.3-",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}

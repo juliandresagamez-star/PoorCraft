@@ -1,0 +1,10 @@
+{
+ "parent": "pooltable:block/table/p11",
+ "textures": {
+  "rail": "pooltable:block/oak_rail",
+  "rail_side": "pooltable:block/oak_rail_side",
+  "rail_under": "pooltable:block/oak_rail_under",
+  "leg": "pooltable:block/oak_leg",
+  "particle": "pooltable:block/oak_rail"
+ }
+}

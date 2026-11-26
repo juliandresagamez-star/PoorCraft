@@ -1,0 +1,19 @@
+{
+ "variants": {
+  "facing=south": {
+   "model": "pooltable:block/lamp/neon_grid_lamp"
+  },
+  "facing=west": {
+   "model": "pooltable:block/lamp/neon_grid_lamp",
+   "y": 90
+  },
+  "facing=north": {
+   "model": "pooltable:block/lamp/neon_grid_lamp",
+   "y": 180
+  },
+  "facing=east": {
+   "model": "pooltable:block/lamp/neon_grid_lamp",
+   "y": 270
+  }
+ }
+}

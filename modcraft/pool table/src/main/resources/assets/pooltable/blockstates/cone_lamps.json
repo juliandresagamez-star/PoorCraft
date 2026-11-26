@@ -1,0 +1,19 @@
+{
+ "variants": {
+  "facing=south": {
+   "model": "pooltable:block/lamp/cone_lamps"
+  },
+  "facing=west": {
+   "model": "pooltable:block/lamp/cone_lamps",
+   "y": 90
+  },
+  "facing=north": {
+   "model": "pooltable:block/lamp/cone_lamps",
+   "y": 180
+  },
+  "facing=east": {
+   "model": "pooltable:block/lamp/cone_lamps",
+   "y": 270
+  }
+ }
+}

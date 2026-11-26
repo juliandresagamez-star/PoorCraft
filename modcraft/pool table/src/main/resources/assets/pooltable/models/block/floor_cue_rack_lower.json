@@ -1,0 +1,137 @@
+{
+ "textures": {
+  "rack_post": "pooltable:block/rack_post",
+  "rack_rail": "pooltable:block/rack_rail",
+  "rack_brass": "pooltable:block/rack_brass",
+  "liner": "pooltable:block/liner",
+  "particle": "pooltable:block/rack_rail"
+ },
+ "elements": [
+  {
+   "from": [
+    2,
+    0,
+    2
+   ],
+   "to": [
+    14,
+    1.5,
+    14
+   ],
+   "faces": {
+    "north": {
+     "texture": "#rack_rail"
+    },
+    "south": {
+     "texture": "#rack_rail"
+    },
+    "east": {
+     "texture": "#rack_rail"
+    },
+    "west": {
+     "texture": "#rack_rail"
+    },
+    "up": {
+     "texture": "#rack_rail"
+    },
+    "down": {
+     "texture": "#rack_rail",
+     "cullface": "down"
+    }
+   }
+  },
+  {
+   "from": [
+    2.75,
+    1.5,
+    2.75
+   ],
+   "to": [
+    13.25,
+    2.5,
+    13.25
+   ],
+   "faces": {
+    "north": {
+     "texture": "#rack_rail"
+    },
+    "south": {
+     "texture": "#rack_rail"
+    },
+    "east": {
+     "texture": "#rack_rail"
+    },
+    "west": {
+     "texture": "#rack_rail"
+    },
+    "up": {
+     "texture": "#liner"
+    },
+    "down": {
+     "texture": "#rack_rail"
+    }
+   }
+  },
+  {
+   "from": [
+    7,
+    2.5,
+    7
+   ],
+   "to": [
+    9,
+    16,
+    9
+   ],
+   "faces": {
+    "north": {
+     "texture": "#rack_post"
+    },
+    "south": {
+     "texture": "#rack_post"
+    },
+    "east": {
+     "texture": "#rack_post"
+    },
+    "west": {
+     "texture": "#rack_post"
+    },
+    "down": {
+     "texture": "#rack_post"
+    }
+   }
+  },
+  {
+   "from": [
+    3,
+    8,
+    3
+   ],
+   "to": [
+    13,
+    8.75,
+    13
+   ],
+   "faces": {
+    "north": {
+     "texture": "#rack_rail"
+    },
+    "south": {
+     "texture": "#rack_rail"
+    },
+    "east": {
+     "texture": "#rack_rail"
+    },
+    "west": {
+     "texture": "#rack_rail"
+    },
+    "up": {
+     "texture": "#rack_rail"
+    },
+    "down": {
+     "texture": "#rack_rail"
+    }
+   }
+  }
+ ]
+}

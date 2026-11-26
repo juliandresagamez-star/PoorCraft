@@ -1,0 +1,176 @@
+{
+ "ambientocclusion": false,
+ "textures": {
+  "cloth": "pooltable:block/cloth",
+  "cushion": "pooltable:block/cushion",
+  "rail": "pooltable:block/rail",
+  "rail_side": "pooltable:block/rail_side",
+  "rail_under": "pooltable:block/rail_under",
+  "sight": "pooltable:block/sight",
+  "liner": "pooltable:block/liner",
+  "pocket": "pooltable:block/pocket",
+  "leg": "pooltable:block/leg",
+  "leg_brass": "pooltable:block/leg_brass",
+  "particle": "pooltable:block/rail"
+ },
+ "elements": [
+  {
+   "from": [
+    0.0,
+    8.0,
+    0.0
+   ],
+   "to": [
+    16.0,
+    14.5,
+    1.5
+   ],
+   "faces": {
+    "up": {
+     "texture": "#rail"
+    },
+    "down": {
+     "texture": "#rail_under"
+    },
+    "north": {
+     "texture": "#rail_side"
+    }
+   }
+  },
+  {
+   "from": [
+    0.0,
+    8.0,
+    1.5
+   ],
+   "to": [
+    7.5,
+    14.5,
+    3.5
+   ],
+   "faces": {
+    "up": {
+     "texture": "#rail"
+    },
+    "down": {
+     "texture": "#rail_under"
+    },
+    "south": {
+     "texture": "#rail_side"
+    }
+   }
+  },
+  {
+   "from": [
+    7.5,
+    8.0,
+    1.5
+   ],
+   "to": [
+    8.5,
+    14.5,
+    2.0
+   ],
+   "faces": {
+    "up": {
+     "texture": "#sight"
+    },
+    "down": {
+     "texture": "#rail_under"
+    }
+   }
+  },
+  {
+   "from": [
+    8.5,
+    8.0,
+    1.5
+   ],
+   "to": [
+    16.0,
+    14.5,
+    3.5
+   ],
+   "faces": {
+    "up": {
+     "texture": "#rail"
+    },
+    "down": {
+     "texture": "#rail_under"
+    },
+    "south": {
+     "texture": "#rail_side"
+    }
+   }
+  },
+  {
+   "from": [
+    7.5,
+    8.0,
+    2.0
+   ],
+   "to": [
+    8.5,
+    14.5,
+    3.5
+   ],
+   "faces": {
+    "up": {
+     "texture": "#rail"
+    },
+    "down": {
+     "texture": "#rail_under"
+    },
+    "south": {
+     "texture": "#rail_side"
+    }
+   }
+  },
+  {
+   "from": [
+    0.0,
+    8.0,
+    3.5
+   ],
+   "to": [
+    16.0,
+    14.25,
+    5.0
+   ],
+   "faces": {
+    "up": {
+     "texture": "#cushion",
+     "tintindex": 0
+    },
+    "down": {
+     "texture": "#rail_under"
+    },
+    "south": {
+     "texture": "#cushion",
+     "tintindex": 0
+    }
+   }
+  },
+  {
+   "from": [
+    0.0,
+    8.0,
+    5.0
+   ],
+   "to": [
+    16.0,
+    13.0,
+    16.0
+   ],
+   "faces": {
+    "up": {
+     "texture": "#cloth",
+     "tintindex": 0
+    },
+    "down": {
+     "texture": "#rail_under"
+    }
+   }
+  }
+ ]
+}

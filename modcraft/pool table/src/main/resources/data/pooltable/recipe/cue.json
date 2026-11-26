@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "equipment",
+  "pattern": [
+    "  B",
+    " S ",
+    "S  "
+  ],
+  "key": {
+    "B": "minecraft:blue_dye",
+    "S": "minecraft:stick"
+  },
+  "result": {
+    "id": "pooltable:cue",
+    "count": 1
+  }
+}

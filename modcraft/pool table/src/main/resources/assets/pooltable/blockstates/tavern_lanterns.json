@@ -1,0 +1,19 @@
+{
+ "variants": {
+  "facing=south": {
+   "model": "pooltable:block/lamp/tavern_lanterns"
+  },
+  "facing=west": {
+   "model": "pooltable:block/lamp/tavern_lanterns",
+   "y": 90
+  },
+  "facing=north": {
+   "model": "pooltable:block/lamp/tavern_lanterns",
+   "y": 180
+  },
+  "facing=east": {
+   "model": "pooltable:block/lamp/tavern_lanterns",
+   "y": 270
+  }
+ }
+}

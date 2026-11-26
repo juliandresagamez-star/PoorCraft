@@ -1,0 +1,6 @@
+{
+ "parent": "minecraft:item/generated",
+ "textures": {
+  "layer0": "pooltable:item/dark_oak_pool_table"
+ }
+}

@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "IAI",
+    "ASA",
+    "IAI"
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "A": "minecraft:amethyst_shard",
+    "S": "minecraft:sea_lantern"
+  },
+  "result": {
+    "id": "pooltable:drone_lamp",
+    "count": 1
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "S S",
+    "PLP",
+    "WWW"
+  ],
+  "key": {
+    "S": "minecraft:string",
+    "P": "minecraft:oak_planks",
+    "L": "minecraft:glowstone",
+    "W": "minecraft:white_concrete"
+  },
+  "result": {
+    "id": "pooltable:saucer_lamps",
+    "count": 1
+  }
+}

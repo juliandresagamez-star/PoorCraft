@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "N N",
+    "ILI",
+    " D "
+  ],
+  "key": {
+    "N": "minecraft:iron_nugget",
+    "I": "minecraft:iron_ingot",
+    "L": "minecraft:glowstone",
+    "D": "minecraft:black_dye"
+  },
+  "result": {
+    "id": "pooltable:linear_lamp",
+    "count": 1
+  }
+}

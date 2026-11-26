@@ -1,0 +1,20 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "S S",
+    "CLC",
+    "IDI"
+  ],
+  "key": {
+    "S": "minecraft:string",
+    "C": "minecraft:copper_ingot",
+    "L": "minecraft:glowstone",
+    "I": "minecraft:iron_ingot",
+    "D": "minecraft:black_dye"
+  },
+  "result": {
+    "id": "pooltable:cone_lamps",
+    "count": 1
+  }
+}
